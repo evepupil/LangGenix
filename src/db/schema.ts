@@ -4,6 +4,7 @@ import {
   json,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -515,3 +516,207 @@ export type TicketPriority = (typeof ticketPriorityEnum.enumValues)[number];
 
 /** 工单状态类型 */
 export type TicketStatus = (typeof ticketStatusEnum.enumValues)[number];
+
+// ============================================================================
+// LangGenix · v0.1 Anki 底座
+// ----------------------------------------------------------------------------
+// 模块 0.1 卡片/牌组模型 · 0.2 SRS 引擎 · 0.4 学习档案 · 1.x 学习
+// 详细设计见 docs/modules/v0.1-anki-foundation.md
+// ============================================================================
+
+// ----------------------------------------
+// LangGenix 枚举
+// ----------------------------------------
+
+/**
+ * 卡片类型枚举
+ *
+ * v0.1 仅支持正反词卡 (basic)。cloze (填空卡) / definition (释义卡)
+ * 在后续版本扩展——枚举先只列已实现项，避免出现无对应实现的"幽灵类型"。
+ */
+export const cardTypeEnum = pgEnum("card_type", ["basic"]);
+
+/**
+ * 卡片状态枚举
+ *
+ * 对齐 ts-fsrs 的 State 枚举 (New=0 / Learning=1 / Review=2 / Relearning=3)。
+ * DB 用语义化字符串存储，SRS 适配器负责与 ts-fsrs 的数字枚举互转。
+ */
+export const cardStateEnum = pgEnum("card_state", [
+  "new",
+  "learning",
+  "review",
+  "relearning",
+]);
+
+/**
+ * SRS 排期算法枚举
+ *
+ * 默认 fsrs (ts-fsrs 库)。sm2 作为可选算法预留 (ADR-004)——
+ * v0.1 仅实装 fsrs，枚举先把 sm2 占位，真正切换时再实现适配器。
+ */
+export const srsAlgorithmEnum = pgEnum("srs_algorithm", ["fsrs", "sm2"]);
+
+// ----------------------------------------
+// 用户学习档案表 (User Learning Profile) — 模块 0.4
+// ----------------------------------------
+/**
+ * 用户学习档案 - 每用户一份，存"当前在学哪门语言 + 学习偏好"
+ *
+ * 注意: currentLanguage 是"学习语言"(用户在学哪门外语)，存语言码 (en/ja...)，
+ * 与 next-intl 的"界面语言" locale 是两个独立维度 (ADR-003)。
+ *
+ * @field userId - 关联用户 (一人一份)
+ * @field currentLanguage - 当前学习语言码 (非 next-intl locale)
+ * @field algorithm - 排期算法偏好 (默认 fsrs)
+ * @field dailyNewLimit - 每日新卡上限
+ * @field dailyReviewLimit - 每日复习上限
+ * @field reviewButtonMode - 复习按钮模式 (four=4键 / two=2键，v0.1 默认 four)
+ */
+export const userLearningProfile = pgTable("user_learning_profile", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => user.id, { onDelete: "cascade" }),
+  currentLanguage: text("current_language").notNull().default("en"),
+  algorithm: srsAlgorithmEnum("algorithm").notNull().default("fsrs"),
+  dailyNewLimit: integer("daily_new_limit").notNull().default(20),
+  dailyReviewLimit: integer("daily_review_limit").notNull().default(200),
+  reviewButtonMode: text("review_button_mode").notNull().default("four"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ----------------------------------------
+// 牌组表 (Deck) — 模块 1.1
+// ----------------------------------------
+/**
+ * 牌组 - 一组卡片的集合，按主题/词库划分
+ *
+ * @field userId - 牌组归属用户
+ * @field name - 牌组名称
+ * @field description - 牌组描述 (可空)
+ * @field learningLanguage - 所属学习语言码 (en/ja...，非 next-intl locale)
+ *        多语言时牌组按此天然隔离 (ADR-003，不硬编码 English)
+ */
+export const deck = pgTable("deck", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  learningLanguage: text("learning_language").notNull().default("en"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ----------------------------------------
+// 卡片表 (Card) — 模块 0.1 + 1.2
+// ----------------------------------------
+/**
+ * 卡片 - 最小复习单位，内容字段 + FSRS 调度状态同表内嵌
+ *
+ * FSRS 状态字段直接对应 ts-fsrs 的 Card 接口 (v5)，由 SRS 适配器读写。
+ * 不存 elapsed_days: ts-fsrs 已弃用 (6.0 移除)，需要时由 lastReview 实时算。
+ *
+ * @field deckId - 所属牌组
+ * @field userId - 冗余存储，便于按用户跨牌组查复习队列
+ * @field type - 卡片类型 (v0.1 仅 basic)
+ * @field front - 正面 (词)
+ * @field back - 背面 (释义)
+ * @field due - 下次到期时间 (复习队列核心字段)
+ * @field stability - FSRS 记忆稳定性
+ * @field difficulty - FSRS 难度
+ * @field scheduledDays - 排期间隔天数
+ * @field reps - 累计复习次数
+ * @field lapses - 累计遗忘次数
+ * @field state - 卡片状态 (new/learning/review/relearning)
+ * @field learningSteps - 学习阶段步数 (ts-fsrs v5+)
+ * @field lastReview - 上次复习时间 (ts-fsrs 中唯一可空字段)
+ */
+export const card = pgTable("card", {
+  id: text("id").primaryKey(),
+  deckId: text("deck_id")
+    .notNull()
+    .references(() => deck.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  type: cardTypeEnum("type").notNull().default("basic"),
+  front: text("front").notNull(),
+  back: text("back").notNull(),
+  // —— FSRS 调度状态 (对应 ts-fsrs Card 接口) ——
+  due: timestamp("due").notNull().defaultNow(),
+  stability: real("stability").notNull().default(0),
+  difficulty: real("difficulty").notNull().default(0),
+  scheduledDays: integer("scheduled_days").notNull().default(0),
+  reps: integer("reps").notNull().default(0),
+  lapses: integer("lapses").notNull().default(0),
+  state: cardStateEnum("state").notNull().default("new"),
+  learningSteps: integer("learning_steps").notNull().default(0),
+  lastReview: timestamp("last_review"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ----------------------------------------
+// 复习日志表 (Review Log) — 模块 0.2 / 1.3
+// ----------------------------------------
+/**
+ * 复习日志 - 每次评分记一条，对应 ts-fsrs 的 ReviewLog
+ *
+ * 支撑: 复习撤销 (rollback)、v0.5 统计 (复习热力图 / 留存率 / 趋势)。
+ *
+ * @field cardId - 关联卡片
+ * @field userId - 便于按用户聚合统计
+ * @field rating - 评分 (1=Again 2=Hard 3=Good 4=Easy，对应 ts-fsrs Rating)
+ * @field state - 复习"前"的卡片状态
+ * @field due - 本次复习时该卡的 due
+ * @field stability - 复习后稳定性快照
+ * @field difficulty - 复习后难度快照
+ * @field scheduledDays - 复习后排期间隔
+ * @field reviewedAt - 复习实际发生时间
+ */
+export const reviewLog = pgTable("review_log", {
+  id: text("id").primaryKey(),
+  cardId: text("card_id")
+    .notNull()
+    .references(() => card.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),
+  state: cardStateEnum("state").notNull(),
+  due: timestamp("due").notNull(),
+  stability: real("stability").notNull(),
+  difficulty: real("difficulty").notNull(),
+  scheduledDays: integer("scheduled_days").notNull(),
+  reviewedAt: timestamp("reviewed_at").notNull().defaultNow(),
+});
+
+// ----------------------------------------
+// LangGenix 类型导出
+// ----------------------------------------
+
+export type UserLearningProfile = typeof userLearningProfile.$inferSelect;
+export type NewUserLearningProfile = typeof userLearningProfile.$inferInsert;
+
+export type Deck = typeof deck.$inferSelect;
+export type NewDeck = typeof deck.$inferInsert;
+
+export type Card = typeof card.$inferSelect;
+export type NewCard = typeof card.$inferInsert;
+
+export type ReviewLog = typeof reviewLog.$inferSelect;
+export type NewReviewLog = typeof reviewLog.$inferInsert;
+
+/** 卡片类型 */
+export type CardType = (typeof cardTypeEnum.enumValues)[number];
+
+/** 卡片状态 (对齐 ts-fsrs State) */
+export type CardState = (typeof cardStateEnum.enumValues)[number];
+
+/** SRS 排期算法 */
+export type SrsAlgorithm = (typeof srsAlgorithmEnum.enumValues)[number];
