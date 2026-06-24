@@ -12,11 +12,13 @@ LangGenix 是一个**以 Anki（间隔重复）为底座、AI 生成为灵魂的
 | --- | --- |
 | [`vision.md`](./vision.md) | 产品愿景、方法论依据、为什么这样做 |
 | [`features.md`](./features.md) | **功能架构总纲**：模块树、分层图、两条核心闭环 |
+| [`roadmap.md`](./roadmap.md) | **实现路线图**：v0.1~v0.5 里程碑、交付物、验收线、依赖 |
 | [`decisions.md`](./decisions.md) | **决策记录（ADR）**：所有拍板的取舍及理由 |
 | [`glossary.md`](./glossary.md) | 术语表（SRS / FSRS / SM-2 / cloze / 语块 等） |
 
-> 模块树与各模块子功能见 [`features.md`](./features.md)。
-> 每个模块的**详细需求拆解**待对应开发阶段开工时再补（具体模块设计随实现拍板）。
+> 模块树与各模块子功能见 [`features.md`](./features.md)；实现顺序与验收线见 [`roadmap.md`](./roadmap.md)。
+> 每个模块的**详细需求拆解**（`docs/modules/<模块>.md`）待对应开发阶段开工时再补：
+> 走「我提需求 → 你出方案+疑问 → 我拍板 → 落文档 → 再实现」流程（见 [`roadmap.md` 工作流约定](./roadmap.md#工作流约定)）。
 
 ## 技术栈（继承自 SaaS 模板）
 
