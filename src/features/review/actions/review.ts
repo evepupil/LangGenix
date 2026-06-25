@@ -89,7 +89,10 @@ export const reviewCardAction = withReviewAction("reviewCard")
       });
     });
 
-    revalidatePath(`/dashboard/decks/${row.deckId}/review`);
+    // 只刷新牌组详情页的统计；复习会话页本身不刷新——
+    // 复习进度由 ReviewSession 本地 state 推进，避免服务器重渲染导致队列
+    // 整体前移、出现"评分后连刷两次下一张正面"的跳变。
+    revalidatePath(`/dashboard/decks/${row.deckId}`);
 
     return {
       message: "复习已记录",
