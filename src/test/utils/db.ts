@@ -4,16 +4,23 @@
  * Provides the shared test DB connection plus cleanup and inspection helpers.
  */
 
-import { neonConfig, Pool } from "@neondatabase/serverless";
+import { Pool as NeonPool, neonConfig } from "@neondatabase/serverless";
 import { eq, inArray, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { drizzle as drizzleNeonWs } from "drizzle-orm/neon-serverless";
+import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { Pool as PgPool } from "pg";
 import ws from "ws";
 
 import * as schema from "@/db/schema";
 
+// 与 src/db/index.ts 一致：按连接串选择驱动
+// - Neon（neon.tech）：WebSocket 驱动（支持事务，兼容 Edge）
+// - 标准 PostgreSQL（本地/Docker 自建）：node-postgres 连接池
+// 测试基建原先硬编码 neon-serverless，连不上裸 PG（WS 握手超时），故在此对齐。
 neonConfig.webSocketConstructor = ws;
 
-let pool: Pool | null = null;
+let neonPool: NeonPool | null = null;
+let pgPool: PgPool | null = null;
 let legacySchemaSynced = false;
 
 function getTestDatabaseUrl(): string {
@@ -30,20 +37,36 @@ function getTestDatabaseUrl(): string {
 
 function createTestDb() {
   const databaseUrl = getTestDatabaseUrl();
-  pool = new Pool({
+
+  // 自建 PostgreSQL：使用标准 pg 驱动
+  if (!databaseUrl.includes("neon.tech")) {
+    pgPool = new PgPool({
+      connectionString: databaseUrl,
+      max: 1,
+      connectionTimeoutMillis: 15000,
+    });
+    return drizzlePg(pgPool, { schema });
+  }
+
+  // Neon：使用 WebSocket 驱动
+  neonPool = new NeonPool({
     connectionString: databaseUrl,
     max: 1,
     connectionTimeoutMillis: 15000,
   });
-  return drizzle(pool, { schema });
+  return drizzleNeonWs(neonPool, { schema });
 }
 
 export const testDb = createTestDb();
 
 export async function closeTestDb() {
-  if (pool) {
-    await pool.end();
-    pool = null;
+  if (neonPool) {
+    await neonPool.end();
+    neonPool = null;
+  }
+  if (pgPool) {
+    await pgPool.end();
+    pgPool = null;
   }
 }
 
