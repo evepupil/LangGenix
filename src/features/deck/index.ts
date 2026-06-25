@@ -4,6 +4,7 @@ export {
   deleteDeckAction,
   updateDeckAction,
 } from "./actions";
+export { CreateDeckDialog, DeleteDeckButton } from "./components";
 export {
   type DeckListItem,
   getDeckById,
@@ -20,3 +21,4 @@ export {
   deleteDeckSchema,
   updateDeckSchema,
 } from "./schemas";
+export { ensureSampleDeck } from "./seed/sample-deck";

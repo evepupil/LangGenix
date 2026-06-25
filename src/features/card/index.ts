@@ -4,6 +4,7 @@ export {
   deleteCardAction,
   updateCardAction,
 } from "./actions";
+export { CardEditorDialog, DeleteCardButton } from "./components";
 export { type CardListItem, getCardById, getDeckCards } from "./queries";
 export type {
   CreateCardInput,

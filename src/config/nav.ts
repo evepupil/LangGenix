@@ -6,6 +6,7 @@ import {
   Globe,
   HardDrive,
   Headset,
+  Layers,
   LayoutDashboard,
   type LucideIcon,
   Settings,
@@ -180,6 +181,11 @@ export const dashboardNav: NavGroup[] = [
         title: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
+      },
+      {
+        title: "牌组",
+        href: "/dashboard/decks",
+        icon: Layers,
       },
       {
         title: "Credits",

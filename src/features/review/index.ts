@@ -1,5 +1,6 @@
 // 复习（Review）功能模块
 export { reviewCardAction } from "./actions";
+export { ReviewSession } from "./components";
 export {
   getReviewCards,
   getReviewQueue,
